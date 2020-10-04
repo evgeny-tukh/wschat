@@ -29,8 +29,44 @@
         websocket.onclose = function(evt) { console.log('closed') };
         websocket.onmessage = function(evt) {
             const incoming = document.getElementById ('incoming');
+            const yourNick = document.getElementById ('from').value;
+            const destNick = document.getElementById ('to').value;
+            const parcel = JSON.parse (evt.data);
+            let text = null;
 
-            incoming.innerHTML = incoming.innerHTML + '<br/>' + evt.data;
+            switch (parcel.action) {
+                case 'notify': {
+                    switch (parcel.event) {
+                        case 'joined': {
+                            text = `<b>${parcel.arg}</b> joined the conversation`; break;
+                        }
+                        case 'left': {
+                            text = `<b>${parcel.arg}</b> left the conversation`; break;
+                        }
+                        case 'you-joined': {
+                            text = 'You joined the conversation'; break;
+                        }
+                        case 'you-left': {
+                            text = 'You left the conversation'; break;
+                        }
+                    }
+
+                    if (text)
+                            text = '<i><font color="#044">' + text + '</font></i>';
+
+                    break;
+                }
+                case 'send': {
+                    const itsMe = parcel.from === yourNick;
+                    const nick = itsMe ? 'You' : parcel.from;
+                    const color = itsMe ? '#f00' : '#00f';
+                    text = `<font color="${color}"><b>[${nick}]</b> ${parcel.msg}</font>`; break;
+                }
+            }
+
+            if (text)
+                incoming.innerHTML = incoming.innerHTML + '<br/>' + text;
+
             console.log('message=' + evt.data);
         };
         websocket.onerror = function(evt) { console.log('error') };
