@@ -8,6 +8,21 @@ use DBI;
 use DBD::mysql;
 use threads ('yield', 'stack_size' => 64*4096, 'exit' => 'threads_only', 'stringify');
 use JSON;
+use Data::Dumper;
+
+use constant {
+    TALKER_JOINED => 'joined',
+    TALKER_LEFT => 'left',
+    YOU_JOINED => 'you-joined',
+    YOU_LEFT => 'you-left',
+
+    ACTION_START => 'start',
+    ACTION_SEND => 'send',
+    ACTION_RESPOND => 'respond',
+    ACTION_NOTIFY => 'notify',
+
+    MSG_SENT => 'msg',
+};
 
 my %config = do 'config.pl';
 
@@ -17,18 +32,9 @@ my %chats = ();
 
 print "Waiting for incoming connections...\n";
 
-Net::WebSocket::Server->new(
+Net::WebSocket::Server->new (
     listen => $config {port},
     on_connect => \&processConnection,
-    #on_connect => sub {
-    #    my ($serv, $dbConn) = @_;
-    #    $dbConn->on(
-    #        utf8 => sub {
-    #            my ($dbConn, $msg) = @_;
-    #            $dbConn->send_utf8("hi there: $msg");
-    #        },
-    #    );
-    #},
 )->start;
 
 # connection process procedure
@@ -58,12 +64,15 @@ sub onMessage {
     } else {
         my $msgObject = decode_json ($message);
 
-        if ($msgObject->{action} eq 'start') {
+        if ($msgObject->{action} eq ACTION_START) {
             $connection->{dbConn} = connectToDb ();
             $connection->{chatID} = startChat ($connection, $msgObject->{from}, $msgObject->{to});
 
             print "Chat ", $connection->{chatID}, " started\n";
-        } elsif ($msgObject->{action} eq 'send') {
+        } elsif ($msgObject->{action} eq ACTION_SEND) {
+            # notify other participants about the message sent
+            notifyParticipants ($chats {$connection->{chatKey}}, MSG_SENT, $msgObject);
+
             print "From:\t", $msgObject->{from}, "\n";
             print "To:\t", $msgObject->{to}, "\n";
             print "Text:\t", $msgObject->{msg}, "\n";
@@ -168,6 +177,32 @@ sub findArchiveChat {
     return $id;
 }
 
+# notify participants about some events
+sub notifyParticipants {
+    my ($chat, $event, $arg) = @_;
+    my $sessions = $chat->{sessions};
+
+    if ($event eq TALKER_JOINED || $event eq TALKER_LEFT) {
+        while (my ($nick, $session) = each (%$sessions)) {
+            if ($arg ne $nick) {
+                my %parcel = (
+                    action => ACTION_NOTIFY,
+                    event => $event,
+                    arg => $arg,
+                );
+
+                $session->send_utf8 (encode_json (\%parcel));
+            }
+        }
+    } elsif ($event eq MSG_SENT) {
+print "NEW MSG SENT:\n";
+        while (my ($nick, $session) = each (%$sessions)) {
+print "for $nick\n";
+            $session->send_utf8 (encode_json ($arg));
+        }
+    }
+}
+
 # initiate the conversation
 sub startChat {
     my $connection = $_ [0];
@@ -183,8 +218,21 @@ sub startChat {
     # generate the unique chat index
     $key = createChatKey ($dbConn, \@participants);
 
-    if (defined ($chats {$key})) {
-        $id = $chats {$key}{id};
+    $connection->{chatKey} = $key;
+
+    my $chat = $chats {$key};
+
+    if (defined ($chat)) {
+        $id = $chat->{id};
+
+        # add a new connection to the chat
+        $chat->{sessions}{$newTalker} = $connection;
+
+        # notify other participants that new talker joined the chat
+        notifyParticipants ($chat, TALKER_JOINED, $newTalker);
+
+        # notify new talker that he joined the conversation
+        notifyParticipants ($chat, YOU_JOINED, $newTalker);
     } else {
         $id = findArchiveChat ($dbConn, \@participants, $key);
 

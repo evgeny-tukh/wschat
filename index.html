@@ -13,6 +13,12 @@
             font-weight: bold;
             border: solid 1px black;
         }
+
+        .incoming {
+            width: 300px;
+            height: 500px;
+            overflow: scroll;
+        }
     </style>
     <script language="javascript" type="text/javascript">
         websocket = new WebSocket('ws://localhost:7007');
@@ -22,6 +28,9 @@
         };
         websocket.onclose = function(evt) { console.log('closed') };
         websocket.onmessage = function(evt) {
+            const incoming = document.getElementById ('incoming');
+
+            incoming.innerHTML = incoming.innerHTML + '<br/>' + evt.data;
             console.log('message=' + evt.data);
         };
         websocket.onerror = function(evt) { console.log('error') };
@@ -68,4 +77,5 @@
         <input type="text" id="msg" value="hi there"/>
         <button id="send">Send</button>
     </div>
+    <div id="incoming" class="incoming"></div>
 </body>
