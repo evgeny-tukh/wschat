@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<meta charset="utf-8" />
+<head>
+    <title>WebSocket Test</title>
+    <style>
+        div {
+            margin-bottom: 10px;
+        }
+
+        input {
+            background-color: #bbb;
+            color: black;
+            font-weight: bold;
+            border: solid 1px black;
+        }
+    </style>
+    <script language="javascript" type="text/javascript">
+        websocket = new WebSocket('ws://localhost:7007');
+        websocket.onopen = function(evt) {
+            console.log('opened');
+            websocket.send('echo');
+        };
+        websocket.onclose = function(evt) { console.log('closed') };
+        websocket.onmessage = function(evt) {
+            console.log('message=' + evt.data);
+        };
+        websocket.onerror = function(evt) { console.log('error') };
+        function send (parcel) {
+            websocket.send(JSON.stringify (parcel));
+        }
+        function init () {
+            document.getElementById('send').onclick = evt => {
+                const msg = document.getElementById('msg');
+                const from = document.getElementById('from');
+                const to = document.getElementById('to');
+                const parcel = {
+                    from: from.value,
+                    to: to.value,
+                    msg: msg.value,
+                    action: 'send',
+                };
+                send (parcel);
+            };
+            document.getElementById('start').onclick = evt => {
+                const from = document.getElementById('from');
+                const to = document.getElementById('to');
+                const parcel = {
+                    from: from.value,
+                    to: to.value,
+                    action: 'start',
+                };
+                send (parcel);
+            };
+        }
+    </script>
+</head>
+<body onload="init()">
+    <h2>WebSocket Test</h2>
+    <div>My nickname
+        <input type="text" id="from" value="jeca"/>
+    </div>
+    <div>To nickname
+        <input type="text" id="to" value="friend"/>
+    </div>
+    <button id="start">Start</button>
+    <button id="stop">Stop</button>
+    <div>Message
+        <input type="text" id="msg" value="hi there"/>
+        <button id="send">Send</button>
+    </div>
+</body>
