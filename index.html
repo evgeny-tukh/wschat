@@ -62,6 +62,18 @@
                     const color = itsMe ? '#f00' : '#00f';
                     text = `<font color="${color}"><b>[${nick}]</b> ${parcel.msg}</font>`; break;
                 }
+                case 'history': {
+                    text = '';
+
+                    parcel.history.forEach (msg => {
+                        const itsMe = msg.from === yourNick;
+                        const nick = itsMe ? 'You' : msg.from;
+                        const color = itsMe ? '#f00' : '#00f';
+                        text += `<font color="${color}"><b>[${nick}]</b> ${msg.msg}</font><br/>`;
+                    });
+
+                    break;
+                }
             }
 
             if (text)
@@ -96,6 +108,13 @@
                 };
                 send (parcel);
             };
+            document.getElementById('swap').onclick = evt => {
+                const from = document.getElementById('from');
+                const to = document.getElementById('to');
+                const tempValue = from.value;
+                from.value = to.value;
+                to.value = tempValue;
+            };
         }
     </script>
 </head>
@@ -103,6 +122,7 @@
     <h2>WebSocket Test</h2>
     <div>My nickname
         <input type="text" id="from" value="jeca"/>
+        <button id="swap">Swap</button>
     </div>
     <div>To nickname
         <input type="text" id="to" value="friend"/>

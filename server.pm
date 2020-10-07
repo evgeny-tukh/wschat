@@ -20,6 +20,7 @@ use constant {
     ACTION_SEND => 'send',
     ACTION_RESPOND => 'respond',
     ACTION_NOTIFY => 'notify',
+    ACTION_HISTORY => 'history',
 
     MSG_SENT => 'msg',
 };
@@ -72,6 +73,9 @@ sub onMessage {
         } elsif ($msgObject->{action} eq ACTION_SEND) {
             # notify other participants about the message sent
             notifyParticipants ($chats {$connection->{chatKey}}, MSG_SENT, $msgObject);
+
+            # add message to the database
+            saveMessage ($connection->{dbConn}, $connection->{chatID}, $msgObject);
 
             print "From:\t", $msgObject->{from}, "\n";
             print "To:\t", $msgObject->{to}, "\n";
@@ -195,9 +199,7 @@ sub notifyParticipants {
             }
         }
     } elsif ($event eq MSG_SENT) {
-print "NEW MSG SENT:\n";
         while (my ($nick, $session) = each (%$sessions)) {
-print "for $nick\n";
             $session->send_utf8 (encode_json ($arg));
         }
     }
@@ -245,6 +247,9 @@ sub startChat {
         $chats {$key}{sessions}{$newTalker} = $connection;
     }
 
+    # load and send the char history
+    getAndSendChatHistory ($connection);
+
     return $id;
 }
 
@@ -253,3 +258,105 @@ sub dbShowError {
     die "failed: ".$_[0]->errstr;
 }
 
+# get talker ID by nickname
+sub getTalkerID {
+    my ($dbConn, $nick) = @_;
+    my $talkerID;
+
+    # look for the talker
+    my $statement = $dbConn->prepare ("select id from talkers where nick=?");
+
+    $statement->execute ($nick) or dbShowError ($dbConn);
+
+    my $row = $statement->fetchrow_hashref;
+
+    $statement->finish;
+
+    $talkerID = ($row->{id} + 0) if (defined ($row));
+
+    return $talkerID;
+}
+
+# save the message to the database
+sub saveMessage {
+    my ($dbConn, $chatID, $msgObject) = @_;
+
+    # look for the talker
+    my $talkerID = getTalkerID ($dbConn, $msgObject->{from});
+
+    if (defined ($talkerID)) {
+        my $statement = $dbConn->prepare ("insert into messages(talker,text,conversation) values(?,?,?)");
+
+        $statement->execute ($talkerID, $msgObject->{msg}, $chatID);
+        $statement->finish;
+    }
+}
+
+# load messages of the certain chat
+sub loadMessages {
+    my ($dbConn, $chatKey, $messages) = @_;
+
+    my %participants = ();
+    my $statement = $dbConn->prepare ("select id from conversations where `key`=?") or dbShowError ($dbConn);
+    my $row;
+    my $chatID;
+
+    $statement->execute ($chatKey);
+
+    $row = $statement->fetchrow_hashref;
+
+    if (defined ($row)) {
+        $chatID = $row->{id} + 0;
+    } else {
+        return;
+    }
+
+    $statement = $dbConn->prepare ("select * from talkers where id in ($chatKey)");
+
+    $statement->execute;
+
+    do {
+        $row = $statement->fetchrow_hashref;
+
+        if (defined ($row)) {
+            $participants {$row->{id} + 0} = $row->{nick};
+        }
+    } while (defined ($row));
+
+    $statement->finish;
+    $statement->execute ();
+
+    $statement = $dbConn->prepare ("select * from messages where conversation=? order by id");
+
+    $statement->execute ($chatID);
+
+    do {
+        $row = $statement->fetchrow_hashref;
+
+        if (defined ($row)) {
+            my %item = (
+                from => $participants {$row->{talker}},
+                to => undef,
+                msg => $row->{text},
+                action => 'send',
+            );
+
+            push (@$messages, \%item);
+        }
+    } while (defined ($row));
+}
+
+# get a chat history for the recently joined talker and send it to him
+sub getAndSendChatHistory {
+    my ($connection) = @_;
+    my @history = ();
+print "chat key: ",$connection->{chatKey},"\n";
+    loadMessages ($connection->{dbConn}, $connection->{chatKey}, \@history);
+
+    my %parcel = (
+        action => ACTION_HISTORY,
+        history => \@history,
+    );
+print Dumper(%parcel);
+    $connection->send_utf8 (encode_json (\%parcel));
+}
