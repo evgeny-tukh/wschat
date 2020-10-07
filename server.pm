@@ -88,7 +88,19 @@ sub onMessage {
 sub onDisconnect {
     my ($connection, $code, $reason) = @_;
 
+    # notify other participants that new talker joined the chat
+    notifyParticipants ($chats {$connection->{chatKey}}, TALKER_LEFT, $connection->{nick});
+
+    # remove session from the chat
+    delete $connection->{sessions}{$connection->{nick}} if defined ($connection->{nick}) && defined ($connection->{sessions}{$connection->{nick}});
+
+    # delete chat if there is nobody
+    delete $chats {$connection->{chatKey}} if (scalar (keys (%chats)) == 0);
+
+    # disconnect the database
     $connection->{dbConn}->disconnect if ($connection->{dbConn});
+
+    print "Chat '", $connection->{chatKey}, "' disconnected\n";
 }
 
 # establish new connection to the database
@@ -221,6 +233,7 @@ sub startChat {
     $key = createChatKey ($dbConn, \@participants);
 
     $connection->{chatKey} = $key;
+    $connection->{nick} = $newTalker;
 
     my $chat = $chats {$key};
 
@@ -350,13 +363,13 @@ sub loadMessages {
 sub getAndSendChatHistory {
     my ($connection) = @_;
     my @history = ();
-print "chat key: ",$connection->{chatKey},"\n";
+
     loadMessages ($connection->{dbConn}, $connection->{chatKey}, \@history);
 
     my %parcel = (
         action => ACTION_HISTORY,
         history => \@history,
     );
-print Dumper(%parcel);
+
     $connection->send_utf8 (encode_json (\%parcel));
 }
